@@ -138,14 +138,28 @@
     background:#000; border-radius:24px; overflow:hidden;
     border:4px solid var(--maroon); box-shadow:0 10px 30px rgba(0,0,0,.6);
   }
+  /* Camera feed is intentionally never shown on screen — kept in the DOM,
+     tiny and invisible, purely so the browser keeps decoding frames for
+     hand-tracking. What players see instead is the stylised canvas below. */
   .stage video{
-    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
-    transform:scaleX(-1);
+    position:absolute; width:2px; height:2px; opacity:0; pointer-events:none;
+    top:0; left:0;
   }
   .stage canvas{
     position:absolute; inset:0; width:100%; height:100%;
     transform:scaleX(-1);
   }
+  .debug-pill{
+    position:absolute; bottom:10px; right:10px; z-index:5;
+    background:rgba(0,0,0,.6); padding:5px 12px; border-radius:20px; font-size:11.5px;
+    color:#e8c99a;
+  }
+  .error-banner{
+    position:absolute; inset:0; z-index:6; display:none;
+    align-items:center; justify-content:center; text-align:center; padding:24px;
+    background:rgba(20,10,6,.92); color:var(--cream); font-size:14px; line-height:1.5;
+  }
+  .error-banner.show{ display:flex; }
   .zone-lines{ position:absolute; inset:0; z-index:2; pointer-events:none; display:flex; }
   .zone-lines .zone{ flex:1; border-right:2px dashed rgba(255,255,255,.18); }
   .zone-lines .zone:last-child{ border-right:none; }
@@ -222,7 +236,7 @@
     </div>
     <div class="brand-eyebrow">Al-Rizwan Paratha Experts presents</div>
     <h1 class="title">Paratha <span class="accent">Shawarma</span> Lassi</h1>
-    <p class="subtitle">The desi spin on Rock–Paper–Scissors. Show your hand, the tawa decides your fate. Powered by real hand-tracking — no controller, sirf haath chalao.</p>
+    <p class="subtitle">The desi spin on Rock–Paper–Scissors. Show your hand, the tawa decides your fate. Powered by real hand-tracking — no controller, sirf haath chalao. Your camera feed is never displayed on screen — only your hand skeleton shows up, live.</p>
 
     <div style="display:flex; gap:20px; margin:14px 0 22px; flex-wrap:wrap; justify-content:center;">
       <div class="avatar-card" style="min-width:110px;">
@@ -281,7 +295,15 @@
       <canvas id="canvas"></canvas>
       <div class="zone-lines" id="zone-lines"></div>
       <div class="status-pill"><span class="dot" id="cam-dot"></span><span id="cam-status">connecting camera…</span></div>
+      <div class="debug-pill" id="debug-pill">hands seen: 0</div>
       <div class="overlay-msg" id="overlay-msg"></div>
+      <div class="error-banner" id="error-banner">
+        <div>
+          <div style="font-size:34px; margin-bottom:8px;">📷🚫</div>
+          <div id="error-text">Couldn't reach the camera.</div>
+          <button class="btn small" id="btn-retry-cam" style="margin-top:14px;">Try again</button>
+        </div>
+      </div>
     </div>
 
     <div class="avatars-row" id="avatars-row"></div>
@@ -296,10 +318,12 @@
   <footer class="tag">Har Paratha, Behtareen Swaad 🔥 · Al-Rizwan Paratha Experts · unofficial fan-made mini-game</footer>
 </div>
 
-<!-- MediaPipe Hands -->
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<!-- MediaPipe Hands — versions pinned deliberately, since mismatched
+     camera_utils / drawing_utils / hands versions is the #1 reason hand
+     detection silently returns zero hands forever. -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
 
 <script>
 /* ============================================================
@@ -552,12 +576,27 @@ function startGameScreen(){
 els.btnReset.addEventListener('click', ()=>{ initScores(); });
 
 /* ---------------- Camera + MediaPipe Hands ---------------- */
+function showCameraError(message){
+  document.getElementById('error-text').textContent = message;
+  document.getElementById('error-banner').classList.add('show');
+}
+function hideCameraError(){
+  document.getElementById('error-banner').classList.remove('show');
+}
+
 function startCamera(){
+  hideCameraError();
   els.camStatus.textContent = 'connecting camera…';
   els.camDot.classList.remove('live');
 
+  if(typeof Hands === 'undefined' || typeof Camera === 'undefined'){
+    showCameraError('The hand-tracking library didn\'t load. Check your internet connection and reopen this file, then try again.');
+    els.camStatus.textContent = 'library failed to load';
+    return;
+  }
+
   if(!handsInstance){
-    handsInstance = new Hands({ locateFile: (file)=> `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    handsInstance = new Hands({ locateFile: (file)=> `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}` });
     handsInstance.setOptions({
       maxNumHands: 3,
       modelComplexity: 1,
@@ -569,20 +608,34 @@ function startCamera(){
 
   if(cameraInstance){ try{ cameraInstance.stop(); }catch(e){} }
   cameraInstance = new Camera(els.video, {
-    onFrame: async ()=>{ await handsInstance.send({image: els.video}); },
+    onFrame: async ()=>{
+      try{ await handsInstance.send({image: els.video}); }
+      catch(e){ console.error('hands.send failed', e); }
+    },
     width: 720, height: 540,
   });
   cameraInstance.start().then(()=>{
-    els.camStatus.textContent = 'camera live';
+    els.camStatus.textContent = 'camera live — tracking is on, no video is shown';
     els.camDot.classList.add('live');
   }).catch(err=>{
-    els.camStatus.textContent = 'camera blocked — check permissions';
+    els.camStatus.textContent = 'camera blocked';
     console.error(err);
+    let msg = 'Couldn\'t reach the camera. Check that you allowed camera access for this page.';
+    if(err && err.name === 'NotAllowedError') msg = 'Camera permission was denied. Allow camera access in your browser\'s address-bar icon, then try again.';
+    if(err && err.name === 'NotFoundError') msg = 'No camera was found on this device.';
+    if(location.protocol === 'file:') msg += ' Some browsers restrict camera access for files opened directly — if this keeps failing, try serving the file over a local web server or opening it in Chrome.';
+    showCameraError(msg);
   });
 }
 function stopCamera(){
   if(cameraInstance){ try{ cameraInstance.stop(); }catch(e){} }
 }
+
+document.getElementById('btn-retry-cam').addEventListener('click', startCamera);
+
+window.addEventListener('error', (e)=>{
+  console.error('Uncaught error:', e.error || e.message);
+});
 
 const canvasCtx = els.canvas.getContext('2d');
 function resizeCanvas(){
@@ -591,26 +644,63 @@ function resizeCanvas(){
 }
 window.addEventListener('resize', resizeCanvas);
 
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],
+  [13,17],[17,18],[18,19],[19,20],
+  [0,17]
+];
+
+function drawStylisedBackdrop(){
+  const w = els.canvas.width, h = els.canvas.height;
+  const grad = canvasCtx.createRadialGradient(w/2,h/2,10, w/2,h/2, Math.max(w,h)*0.7);
+  grad.addColorStop(0, '#2a1a0e');
+  grad.addColorStop(1, '#120c08');
+  canvasCtx.fillStyle = grad;
+  canvasCtx.fillRect(0,0,w,h);
+}
+
+function drawHandSkeleton(landmarks, w, h){
+  canvasCtx.lineWidth = 3;
+  canvasCtx.strokeStyle = 'rgba(245,180,11,0.55)';
+  HAND_CONNECTIONS.forEach(([a,b])=>{
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(landmarks[a].x*w, landmarks[a].y*h);
+    canvasCtx.lineTo(landmarks[b].x*w, landmarks[b].y*h);
+    canvasCtx.stroke();
+  });
+  canvasCtx.fillStyle = 'rgba(245,180,11,0.95)';
+  landmarks.forEach(pt=>{
+    canvasCtx.beginPath();
+    canvasCtx.arc(pt.x*w, pt.y*h, 4, 0, Math.PI*2);
+    canvasCtx.fill();
+  });
+  // bright dot on the wrist so each player can see they're tracked
+  canvasCtx.fillStyle = 'rgba(63,163,77,0.9)';
+  canvasCtx.beginPath();
+  canvasCtx.arc(landmarks[0].x*w, landmarks[0].y*h, 7, 0, Math.PI*2);
+  canvasCtx.fill();
+}
+
 function onHandsResults(results){
   resizeCanvas();
   canvasCtx.save();
-  canvasCtx.clearRect(0,0,els.canvas.width, els.canvas.height);
+  drawStylisedBackdrop();
   latestHands = [];
 
-  if(results.multiHandLandmarks){
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length){
     results.multiHandLandmarks.forEach(landmarks=>{
-      // draw light dots for feedback
-      canvasCtx.fillStyle = 'rgba(245,180,11,0.85)';
-      landmarks.forEach(pt=>{
-        canvasCtx.beginPath();
-        canvasCtx.arc(pt.x*els.canvas.width, pt.y*els.canvas.height, 3, 0, Math.PI*2);
-        canvasCtx.fill();
-      });
+      drawHandSkeleton(landmarks, els.canvas.width, els.canvas.height);
       const wristX = landmarks[0].x;
       latestHands.push({ landmarks, x: wristX });
     });
   }
   canvasCtx.restore();
+
+  const debugPill = document.getElementById('debug-pill');
+  if(debugPill) debugPill.textContent = `hands seen: ${latestHands.length}`;
 
   if(capturing){
     tryCaptureFromLive();
