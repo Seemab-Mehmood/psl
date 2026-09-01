@@ -1,0 +1,16 @@
+{
+  "name": "paratha-shawarma-lassi",
+  "version": "1.0.0",
+  "description": "Al-Rizwan Paratha Experts arcade game with live Raast QR payment gate and monthly-refresh admin panel.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1"
+  }
+}

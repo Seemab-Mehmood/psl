@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Admin — Paratha Shawarma Lassi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Fredoka:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --marigold:#f5b40b; --marigold-deep:#e08e00; --maroon:#7a1e1e;
+    --charcoal:#1c140f; --cream:#fff3d6; --chai:#5a3722; --chili:#d62828; --leaf:#3fa34d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; font-family:'Fredoka',sans-serif; color:var(--cream);
+    background: radial-gradient(circle at 20% 0%, #3a2413 0%, var(--charcoal) 55%, #120c08 100%);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  h1,h2{ font-family:'Baloo 2',cursive; }
+  .card{
+    background:linear-gradient(160deg, var(--chai) 0%, #2a1a0e 100%);
+    border:3px solid var(--marigold-deep); border-radius:22px; padding:26px;
+    max-width:420px; width:100%; box-shadow:0 12px 30px rgba(0,0,0,.5);
+  }
+  h1{ font-size:22px; color:var(--marigold); margin-top:0; text-align:center;}
+  label{ font-size:13px; color:#e8c99a; display:block; margin:14px 0 4px;}
+  input[type=password], input[type=date], input[type=file]{
+    width:100%; padding:10px; border-radius:10px; border:2px solid #3c2716;
+    background:#1c140f; color:var(--cream); font-family:'Fredoka'; font-size:14px;
+  }
+  button{
+    font-family:'Baloo 2'; font-weight:700; font-size:15px; padding:11px 20px; border-radius:12px;
+    border:none; cursor:pointer; margin-top:16px; width:100%;
+    background:linear-gradient(180deg, var(--marigold), var(--marigold-deep)); color:#2b1a06;
+  }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  .msg{ font-size:13px; margin-top:10px; text-align:center; min-height:18px; }
+  .msg.ok{ color:var(--leaf); }
+  .msg.err{ color:var(--chili); }
+  .current-qr{ text-align:center; margin-top:18px; }
+  .current-qr img{ width:150px; height:150px; object-fit:contain; background:#fff; border-radius:12px; padding:8px; }
+  .current-qr .exp{ font-size:12.5px; color:#e8c99a; margin-top:6px; }
+  #logout-link{ display:block; text-align:center; margin-top:14px; color:#c8a878; font-size:12.5px; cursor:pointer; }
+  #logout-link:hover{ color:var(--marigold); }
+</style>
+</head>
+<body>
+
+<div class="card" id="login-card">
+  <h1>🔐 Admin Login</h1>
+  <label for="pw">Admin password</label>
+  <input type="password" id="pw" placeholder="••••••••" />
+  <button id="btn-login">Log in</button>
+  <div class="msg" id="login-msg"></div>
+</div>
+
+<div class="card" id="upload-card" style="display:none;">
+  <h1>🫓 Update Payment QR</h1>
+
+  <div class="current-qr" id="current-qr-block">
+    <img id="current-qr-img" src="" alt="current QR" />
+    <div class="exp" id="current-qr-expiry"></div>
+  </div>
+
+  <label for="qr-file">New QR image (PNG/JPG/WEBP)</label>
+  <input type="file" id="qr-file" accept="image/png,image/jpeg,image/webp" />
+
+  <label for="qr-expiry">Valid until (optional but recommended)</label>
+  <input type="date" id="qr-expiry" />
+
+  <button id="btn-upload">Upload & Replace QR</button>
+  <div class="msg" id="upload-msg"></div>
+
+  <div id="logout-link">Log out</div>
+</div>
+
+<script>
+const TOKEN_KEY = 'psl_admin_token';
+
+function getToken(){ return localStorage.getItem(TOKEN_KEY); }
+function setToken(t){ localStorage.setItem(TOKEN_KEY, t); }
+function clearToken(){ localStorage.removeItem(TOKEN_KEY); }
+
+async function refreshCurrentQr(){
+  try{
+    const res = await fetch('/api/qr-info');
+    const data = await res.json();
+    document.getElementById('current-qr-img').src = data.qrUrl;
+    document.getElementById('current-qr-expiry').textContent = data.expiry
+      ? `Currently valid until: ${data.expiry}`
+      : 'No expiry date on file yet.';
+  }catch(e){
+    document.getElementById('current-qr-expiry').textContent = 'Could not load current QR info.';
+  }
+}
+
+function showLoggedIn(){
+  document.getElementById('login-card').style.display = 'none';
+  document.getElementById('upload-card').style.display = '';
+  refreshCurrentQr();
+}
+function showLoggedOut(){
+  document.getElementById('login-card').style.display = '';
+  document.getElementById('upload-card').style.display = 'none';
+}
+
+if(getToken()) showLoggedIn(); else showLoggedOut();
+
+document.getElementById('btn-login').addEventListener('click', async ()=>{
+  const pw = document.getElementById('pw').value;
+  const msg = document.getElementById('login-msg');
+  msg.textContent = 'Checking…'; msg.className = 'msg';
+  try{
+    const res = await fetch('/api/admin/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ password: pw })
+    });
+    const data = await res.json();
+    if(res.ok && data.token){
+      setToken(data.token);
+      msg.textContent = ''; 
+      showLoggedIn();
+    } else {
+      msg.textContent = data.error || 'Login failed.'; msg.className = 'msg err';
+    }
+  }catch(e){
+    msg.textContent = "Couldn't reach the server."; msg.className = 'msg err';
+  }
+});
+
+document.getElementById('logout-link').addEventListener('click', ()=>{
+  clearToken(); showLoggedOut();
+});
+
+document.getElementById('btn-upload').addEventListener('click', async ()=>{
+  const fileInput = document.getElementById('qr-file');
+  const expiry = document.getElementById('qr-expiry').value;
+  const msg = document.getElementById('upload-msg');
+
+  if(!fileInput.files[0]){
+    msg.textContent = 'Choose an image first.'; msg.className = 'msg err';
+    return;
+  }
+  const form = new FormData();
+  form.append('qrImage', fileInput.files[0]);
+  if(expiry) form.append('expiry', expiry);
+
+  msg.textContent = 'Uploading…'; msg.className = 'msg';
+  try{
+    const res = await fetch('/api/admin/upload-qr', {
+      method:'POST',
+      headers:{ 'Authorization': 'Bearer ' + getToken() },
+      body: form
+    });
+    const data = await res.json();
+    if(res.ok){
+      msg.textContent = '✅ QR updated — live immediately.'; msg.className = 'msg ok';
+      fileInput.value = '';
+      refreshCurrentQr();
+    } else if(res.status === 401){
+      msg.textContent = 'Session expired — log in again.'; msg.className = 'msg err';
+      clearToken(); showLoggedOut();
+    } else {
+      msg.textContent = data.error || 'Upload failed.'; msg.className = 'msg err';
+    }
+  }catch(e){
+    msg.textContent = "Couldn't reach the server."; msg.className = 'msg err';
+  }
+});
+</script>
+</body>
+</html>
