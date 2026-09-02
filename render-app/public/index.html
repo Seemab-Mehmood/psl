@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="apple-touch-icon" href="/favicon.svg" />
 <title>Paratha Shawarma Lassi</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -190,6 +192,33 @@
   }
   .result-sub{ font-size:15px; color:var(--steam); background:rgba(0,0,0,.5); padding:6px 14px; border-radius:10px; }
 
+  /* ---------- staff override modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+    background:rgba(10,6,3,.72); backdrop-filter:blur(3px); padding:20px;
+  }
+  .modal-backdrop.active{ display:flex; animation:fadeUp .25s ease; }
+  .modal-card{
+    width:100%; max-width:320px;
+    background:linear-gradient(160deg, var(--chai) 0%, #2a1a0e 100%);
+    border:3px solid var(--marigold-deep); border-radius:22px; padding:26px 24px 22px;
+    text-align:center; box-shadow:0 16px 44px rgba(0,0,0,.65);
+    animation: dropIn .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  .modal-lock{ font-size:30px; margin-bottom:2px; }
+  .modal-card h3{ margin:0 0 6px; color:var(--marigold); font-size:21px; }
+  .modal-sub{ margin:0 0 16px; font-size:13px; color:#e8c99a; line-height:1.4; }
+  .pin-input{
+    width:100%; font-family:'Baloo 2', cursive; font-size:28px; letter-spacing:12px; text-align:center;
+    padding:12px 10px; border-radius:12px; border:2px solid var(--marigold-deep);
+    background:#1c140f; color:var(--cream); outline:none; transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .pin-input:focus{ border-color:var(--marigold); box-shadow:0 0 0 3px rgba(245,180,11,.28); }
+  .pin-input.shake{ animation: shakeErr .35s ease; }
+  @keyframes shakeErr{ 0%,100%{transform:translateX(0);} 25%{transform:translateX(-8px);} 75%{transform:translateX(8px);} }
+  .modal-error{ min-height:18px; color:var(--chili); font-size:13px; font-weight:600; margin-top:8px; }
+  .modal-actions{ display:flex; gap:10px; justify-content:center; margin-top:14px; }
+
   .battle-row{ display:flex; align-items:center; justify-content:center; gap:18px; }
 
   .computer-preview{
@@ -246,9 +275,34 @@
   }
   .error-banner.show{ display:flex; }
 
-  .top-bar{ display:flex; justify-content:space-between; width:100%; max-width:720px; align-items:center; margin-bottom:2px; gap:10px; flex-wrap:wrap;}
+  .top-bar{ display:flex; justify-content:space-between; width:100%; max-width:720px; align-items:center; margin-bottom:2px; gap:8px; flex-wrap:wrap;}
   .back-link{ background:none; border:none; color:#e8c99a; font-family:'Fredoka'; font-size:13px; cursor:pointer; display:flex; align-items:center; gap:4px;}
   .back-link:hover{ color:var(--marigold); }
+
+  /* ---------- single-frame game screen (no scrolling once a session starts) ---------- */
+  body.game-active{ overflow:hidden; }
+  .app.compact{
+    height:100dvh; min-height:100dvh; max-height:100dvh;
+    padding:8px 10px 6px; overflow:hidden;
+  }
+  #screen-game.screen.active{
+    flex:1 1 auto; min-height:0; height:100%;
+    justify-content:flex-start; gap:6px;
+  }
+  #screen-game .stage{
+    flex:1 1 auto; min-height:140px; width:100%; max-width:720px;
+    aspect-ratio:auto;
+  }
+  #screen-game #game-below-stage{
+    flex:0 0 auto; width:100%; max-width:720px;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
+  }
+  #screen-game .avatars-row{ margin-top:2px; gap:10px; }
+  #screen-game .avatar-card{ padding:6px 10px; min-width:76px; gap:3px; }
+  #screen-game .avatar-card svg{ width:38px; height:38px; }
+  #screen-game .controls-row{ margin-top:2px; }
+  #screen-game .hint{ font-size:11.5px; margin:0; }
+  #sessions-badge{ white-space:nowrap; }
 
   /* ---------- session summary ---------- */
   .summary-card{
@@ -334,7 +388,10 @@
   <section class="screen" id="screen-game">
     <div class="top-bar">
       <button class="back-link" id="back-to-mode">← change mode</button>
+      <button class="btn small" id="btn-start-session">🥋 Start 2-Min Session</button>
+      <button class="btn danger small" id="btn-stop-session" style="display:none;">⏹ End Session Now</button>
       <div class="session-timer" id="session-timer">⏱ 2:00</div>
+      <div class="score-chip" id="sessions-badge"><b id="sessions-badge-n">2</b> sessions left</div>
       <div class="scoreboard" id="scoreboard"></div>
     </div>
 
@@ -354,19 +411,19 @@
       </div>
     </div>
 
-    <div class="computer-preview" id="computer-preview">
-      <svg viewBox="0 0 100 100"></svg>
-      <span class="cp-label">🤖 Computer is shuffling its move…</span>
-    </div>
-    <div class="battle-row" id="battle-row"></div>
-    <div class="avatars-row" id="avatars-row"></div>
+    <div id="game-below-stage">
+      <div class="computer-preview" id="computer-preview">
+        <svg viewBox="0 0 100 100"></svg>
+        <span class="cp-label">🤖 Computer is shuffling its move…</span>
+      </div>
+      <div class="battle-row" id="battle-row"></div>
+      <div class="avatars-row" id="avatars-row"></div>
 
-    <div class="controls-row">
-      <button class="btn" id="btn-start-session">🥋 Start 2-Min Session</button>
-      <button class="btn danger small" id="btn-stop-session" style="display:none;">⏹ End Session Now</button>
-      <button class="btn secondary small" id="btn-reset">Reset scores</button>
+      <div class="controls-row">
+        <button class="btn secondary small" id="btn-reset">Reset scores</button>
+      </div>
+      <p class="hint" id="game-hint">Get your hand fully inside the frame. Each round: 3-2-1, then Show!</p>
     </div>
-    <p class="hint" id="game-hint">Get your hand fully inside the frame. Each round: 3-2-1, then Show!</p>
   </section>
 
   <!-- ================= SCREEN 4: SESSION SUMMARY ================= -->
@@ -375,7 +432,8 @@
       <div class="crown" id="summary-crown">🏆</div>
       <h2 id="summary-title">Session Over!</h2>
       <div class="final-scores" id="final-scores"></div>
-      <div id="summary-line" style="margin-bottom:18px; font-size:15px; color:#e8c99a;"></div>
+      <div id="summary-line" style="margin-bottom:6px; font-size:15px; color:#e8c99a;"></div>
+      <p id="summary-sessions-note" style="margin:0 0 18px; font-size:12.5px; color:#c8a878;"></p>
       <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
         <button class="btn" id="btn-play-again">🔁 Play Again</button>
         <button class="btn secondary" id="btn-change-mode">Change Mode</button>
@@ -387,21 +445,59 @@
   <section class="screen" id="screen-payment">
     <div class="summary-card" style="max-width:420px;">
       <h2 style="font-size:24px; margin-top:0;">Rs. 100 to Play</h2>
-      <p style="font-size:14px; color:#e8c99a; margin-top:-6px;">Scan, pay via Raast, and type the ref code below in the transfer comment/reason.</p>
-      <img id="payment-qr-img" src="" alt="Raast QR code"
-           style="width:200px; height:200px; object-fit:contain; background:#fff; border-radius:14px; padding:10px; margin:10px auto; display:block;" />
-      <div id="payment-qr-expiry" style="font-size:12px; color:#e8c99a; margin-top:-4px; margin-bottom:6px;"></div>
-      <div style="font-family:'Baloo 2'; font-size:30px; color:var(--marigold); letter-spacing:2px; margin:10px 0;">
-        Ref: <span id="payment-ref">----</span>
+
+      <!-- Step 1: name on the paying bank account -->
+      <div id="payment-name-step">
+        <p style="font-size:14px; color:#e8c99a; margin-top:-6px;">
+          First, enter the name on the bank account you'll pay from — exactly as your bank shows it
+          (e.g. "Areej Fatima"). We use this to confirm your payment automatically.
+        </p>
+        <input type="text" id="payment-name-input" autocomplete="off" maxlength="60"
+               placeholder="Name on your bank account"
+               style="width:100%; box-sizing:border-box; font-family:'Baloo 2', cursive; font-size:18px;
+                      text-align:center; padding:12px 10px; border-radius:12px; border:2px solid var(--marigold-deep);
+                      background:#1c140f; color:var(--cream); outline:none; margin:14px 0 6px;" />
+        <div class="modal-error" id="payment-name-error"></div>
+        <button class="btn" id="btn-payment-name-continue" style="margin-top:8px;">Continue to QR</button>
+        <p class="hint" style="margin-top:14px;">Already paid or automation down? <span id="btn-staff-override-1" style="text-decoration:underline; cursor:pointer;">Staff Override</span>.</p>
       </div>
-      <div id="payment-status" style="font-size:14px; color:var(--steam); margin-bottom:16px;">Waiting for payment…</div>
-      <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-        <button class="btn secondary small" id="btn-cancel-payment">Cancel</button>
-        <button class="btn small" id="btn-staff-override">Staff Override</button>
+
+      <!-- Step 2: QR + waiting for the SMS match -->
+      <div id="payment-qr-step" style="display:none;">
+        <p style="font-size:14px; color:#e8c99a; margin-top:-6px;">
+          Scan and pay Rs. 100 via Raast from <b id="payment-name-echo"></b>'s account.
+        </p>
+        <img id="payment-qr-img" src="" alt="Raast QR code"
+             style="width:200px; height:200px; object-fit:contain; background:#fff; border-radius:14px; padding:10px; margin:10px auto; display:block;" />
+        <div id="payment-qr-expiry" style="font-size:12px; color:#e8c99a; margin-top:-4px; margin-bottom:6px;"></div>
+        <div style="font-family:'Baloo 2'; font-size:22px; color:var(--marigold); letter-spacing:1px; margin:10px 0;">
+          Ref: <span id="payment-ref">----</span>
+        </div>
+        <div id="payment-status" style="font-size:14px; color:var(--steam); margin-bottom:16px;">Waiting for payment…</div>
+        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+          <button class="btn secondary small" id="btn-cancel-payment">Cancel</button>
+          <button class="btn small" id="btn-staff-override">Staff Override</button>
+        </div>
+        <p class="hint" style="margin-top:14px;">Automation not connected yet? Use Staff Override (PIN required) so the counter never gets stuck.</p>
       </div>
-      <p class="hint" style="margin-top:14px;">Automation not connected yet? Use Staff Override (PIN required) so the counter never gets stuck.</p>
     </div>
   </section>
+
+  <!-- ================= STAFF OVERRIDE MODAL ================= -->
+  <div class="modal-backdrop" id="modal-staff-override">
+    <div class="modal-card">
+      <div class="modal-lock">🔒</div>
+      <h3>Staff Override</h3>
+      <p class="modal-sub">Enter the staff PIN to skip payment for this session.</p>
+      <input type="password" inputmode="numeric" autocomplete="off" id="staff-pin-input"
+             class="pin-input" maxlength="8" placeholder="••••" />
+      <div class="modal-error" id="staff-pin-error"></div>
+      <div class="modal-actions">
+        <button class="btn secondary small" id="btn-pin-cancel">Cancel</button>
+        <button class="btn small" id="btn-pin-submit">Unlock</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="tag">Har Paratha, Behtareen Swaad 🔥 · Al-Rizwan Paratha Experts · unofficial fan-made mini-game · <a href="/admin.html" style="color:#7a6248;">staff admin</a></footer>
 </div>
@@ -472,6 +568,19 @@ const AVATAR_SVG = {
     <path d="M40 60 Q50 68 60 60" stroke="#a86f2a" stroke-width="4" fill="none" stroke-linecap="round"/>
     <path d="M50 6 Q54 14 50 20 Q46 14 50 6 Z" fill="#f5b40b"/>
     <rect x="47" y="0" width="4" height="10" rx="2" fill="#e0e0e0"/>
+  `,
+  robot: `
+    <rect x="20" y="10" width="10" height="16" rx="4" fill="#8a99a8"/>
+    <circle cx="25" cy="8" r="4" fill="#f5b40b"/>
+    <rect x="22" y="26" width="56" height="52" rx="14" fill="#aebdca"/>
+    <rect x="22" y="26" width="56" height="52" rx="14" fill="none" stroke="#5f6c78" stroke-width="3"/>
+    <rect x="30" y="40" width="16" height="14" rx="5" fill="#1c140f"/>
+    <rect x="54" y="40" width="16" height="14" rx="5" fill="#1c140f"/>
+    <circle cx="38" cy="47" r="3.4" fill="#5ad1ff"/>
+    <circle cx="62" cy="47" r="3.4" fill="#5ad1ff"/>
+    <rect x="34" y="62" width="32" height="7" rx="3.5" fill="#5f6c78"/>
+    <rect x="8" y="42" width="10" height="22" rx="5" fill="#8a99a8"/>
+    <rect x="82" y="42" width="10" height="22" rx="5" fill="#8a99a8"/>
   `
 };
 function paintMini(id, key){ document.getElementById(id).innerHTML = AVATAR_SVG[key]; }
@@ -519,6 +628,13 @@ let sessionActive = false;
 let sessionEndAt = 0;
 let sessionTimerInterval = null;
 let roundInFlight = false;
+let sessionsLeft = 0;     // free 2-min sessions remaining on the current payment
+const SESSIONS_PER_PAYMENT = 2;
+
+function updateSessionsBadge(){
+  const n = document.getElementById('sessions-badge-n');
+  if(n) n.textContent = sessionsLeft;
+}
 
 function playerSlots(){
   return mode==='solo' ? ['P1','Computer'] : ['P1','P2'];
@@ -559,7 +675,21 @@ const els = {
 function showScreen(name){
   Object.values(els.screens).forEach(s => s.classList.remove('active'));
   els.screens[name].classList.add('active');
+  const compact = name === 'game';
+  document.body.classList.toggle('game-active', compact);
+  document.querySelector('.app').classList.toggle('compact', compact);
+  if(compact) requestAnimationFrame(fitStageToViewport);
 }
+
+function fitStageToViewport(){
+  // Belt-and-braces: the flex layout (see CSS) already sizes .stage to
+  // fill whatever space is left after the top bar and the below-stage
+  // block, but on some mobile browsers the address bar collapsing mid-
+  // session can leave a stale height — recompute on demand.
+  if(!els.screens.game.classList.contains('active')) return;
+  window.dispatchEvent(new Event('resize'));
+}
+window.addEventListener('orientationchange', ()=> setTimeout(fitStageToViewport, 200));
 
 /* ---------------- Tiny WebAudio jingle (no external audio files) ---------------- */
 function ensureAudioCtx(){
@@ -628,6 +758,27 @@ let onPaymentConfirmed = null; // callback set by whoever opened the gate
 async function openPaymentGate(onConfirmed){
   onPaymentConfirmed = onConfirmed;
   showScreen('payment');
+  document.getElementById('payment-name-step').style.display = '';
+  document.getElementById('payment-qr-step').style.display = 'none';
+  document.getElementById('payment-name-input').value = '';
+  document.getElementById('payment-name-error').textContent = '';
+  setTimeout(()=> document.getElementById('payment-name-input').focus(), 60);
+}
+
+async function submitPaymentName(){
+  const nameInput = document.getElementById('payment-name-input');
+  const nameError = document.getElementById('payment-name-error');
+  const name = nameInput.value.trim();
+  if(name.length < 2){
+    nameError.textContent = 'Please enter the name on your bank account.';
+    nameInput.focus();
+    return;
+  }
+  nameError.textContent = '';
+
+  document.getElementById('payment-name-step').style.display = 'none';
+  document.getElementById('payment-qr-step').style.display = '';
+  document.getElementById('payment-name-echo').textContent = name;
   document.getElementById('payment-status').textContent = 'Generating your ref code…';
   document.getElementById('payment-ref').textContent = '----';
 
@@ -648,8 +799,16 @@ async function openPaymentGate(onConfirmed){
   }
 
   try{
-    const res = await fetch(`${PAYMENT_BACKEND_URL}/api/create-session`, { method: 'POST' });
+    const res = await fetch(`${PAYMENT_BACKEND_URL}/api/create-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
     const data = await res.json();
+    if(!res.ok){
+      document.getElementById('payment-status').textContent = data.error || 'Could not start a session — try again.';
+      return;
+    }
     currentPaymentRef = data.ref;
     document.getElementById('payment-ref').textContent = currentPaymentRef;
     document.getElementById('payment-status').textContent = 'Waiting for payment…';
@@ -660,6 +819,12 @@ async function openPaymentGate(onConfirmed){
       "Can't reach the payment backend right now — check it's running, or use Staff Override.";
   }
 }
+
+document.getElementById('btn-payment-name-continue').addEventListener('click', submitPaymentName);
+document.getElementById('payment-name-input').addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){ e.preventDefault(); submitPaymentName(); }
+});
+document.getElementById('btn-staff-override-1').addEventListener('click', ()=> openStaffOverrideModal());
 
 function startPollingPayment(){
   stopPollingPayment();
@@ -699,29 +864,83 @@ document.getElementById('btn-cancel-payment').addEventListener('click', ()=>{
   showScreen('start');
 });
 
-document.getElementById('btn-staff-override').addEventListener('click', ()=>{
-  const pin = prompt('Enter staff PIN to override payment:');
-  if(pin === STAFF_OVERRIDE_PIN){
+/* ---------------- Staff override modal ---------------- */
+const staffModal = document.getElementById('modal-staff-override');
+const staffPinInput = document.getElementById('staff-pin-input');
+const staffPinError = document.getElementById('staff-pin-error');
+
+function openStaffOverrideModal(){
+  staffPinInput.value = '';
+  staffPinError.textContent = '';
+  staffPinInput.classList.remove('shake');
+  staffModal.classList.add('active');
+  setTimeout(()=> staffPinInput.focus(), 60);
+}
+function closeStaffOverrideModal(){
+  staffModal.classList.remove('active');
+  staffPinInput.value = '';
+  staffPinError.textContent = '';
+}
+function submitStaffOverride(){
+  const pin = staffPinInput.value;
+  if(pin && pin === STAFF_OVERRIDE_PIN){
+    closeStaffOverrideModal();
     stopPollingPayment();
     document.getElementById('payment-status').textContent = '✅ Staff override applied.';
     closePaymentGateAndProceed();
-  } else if(pin !== null){
-    alert('Incorrect PIN.');
+  } else {
+    staffPinError.textContent = 'Incorrect PIN — try again.';
+    staffPinInput.value = '';
+    staffPinInput.classList.remove('shake');
+    void staffPinInput.offsetWidth; // restart animation
+    staffPinInput.classList.add('shake');
+    staffPinInput.focus();
   }
+}
+
+document.getElementById('btn-staff-override').addEventListener('click', openStaffOverrideModal);
+document.getElementById('btn-pin-cancel').addEventListener('click', closeStaffOverrideModal);
+document.getElementById('btn-pin-submit').addEventListener('click', submitStaffOverride);
+staffPinInput.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter'){ e.preventDefault(); submitStaffOverride(); }
+  if(e.key === 'Escape'){ e.preventDefault(); closeStaffOverrideModal(); }
+});
+staffModal.addEventListener('click', (e)=>{
+  if(e.target === staffModal) closeStaffOverrideModal();
 });
 
 /* ---------------- Screen 1: Start Session -> pay -> then pick mode ---------------- */
 function startPaidFlow(){
   playJingle();
-  openPaymentGate(()=> showScreen('mode'));
+  openPaymentGate(()=>{
+    sessionsLeft = SESSIONS_PER_PAYMENT;
+    updateSessionsBadge();
+    showScreen('mode');
+  });
 }
 els.btnStart.addEventListener('click', startPaidFlow);
 els.backToStart.addEventListener('click', ()=> showScreen('start'));
 els.backToMode.addEventListener('click', ()=> { endSessionSilently(); stopCamera(); showScreen('mode'); });
 
-/* ---------------- Screen 2: mode selection (already paid to get here) ---------------- */
-els.modeSolo.addEventListener('click', ()=>{ mode='solo'; startGameScreen(); });
-els.modeGroup.addEventListener('click', ()=>{ mode='group'; startGameScreen(); });
+/* ---------------- Screen 2: mode selection ---------------- */
+// A customer gets 2 free 2-min sessions per payment. Picking a mode spends
+// one of those slots; once they're used up, picking a mode routes back
+// through the payment gate first.
+function chooseMode(m){
+  mode = m;
+  if(sessionsLeft > 0){
+    startGameScreen();
+  } else {
+    playJingle();
+    openPaymentGate(()=>{
+      sessionsLeft = SESSIONS_PER_PAYMENT;
+      updateSessionsBadge();
+      startGameScreen();
+    });
+  }
+}
+els.modeSolo.addEventListener('click', ()=> chooseMode('solo'));
+els.modeGroup.addEventListener('click', ()=> chooseMode('group'));
 
 /* ---------------- Screen 3: game setup ---------------- */
 function initScores(){
@@ -760,7 +979,7 @@ function renderAvatarsIdle(){
   els.avatarsRow.innerHTML = slots.map(s=>{
     const isComputer = s==='Computer';
     return `<div class="avatar-card" id="avatar-${s}">
-      <svg viewBox="0 0 100 100">${AVATAR_SVG.lassi}</svg>
+      <svg viewBox="0 0 100 100">${isComputer ? AVATAR_SVG.robot : AVATAR_SVG.lassi}</svg>
       <div class="avatar-name">${isComputer?'🤖 Computer':s}</div>
       <div class="avatar-gesture" id="gesture-${s}">waiting…</div>
     </div>`;
@@ -784,6 +1003,7 @@ function startGameScreen(){
   els.sessionTimer.classList.remove('urgent');
   els.btnStartSession.style.display = '';
   els.btnStopSession.style.display = 'none';
+  els.gameHint.style.display = '';
   els.gameHint.textContent = mode==='solo'
     ? "The computer locks in its move before your countdown even starts (watch it shuffle!) — it can never react to your throw. Get in frame, then hit start."
     : 'Line up 2 players, one per half of the frame, then hit start together.';
@@ -791,7 +1011,7 @@ function startGameScreen(){
 }
 
 els.btnReset.addEventListener('click', ()=>{ if(!sessionActive) initScores(); });
-els.btnPlayAgain.addEventListener('click', startPaidFlow);
+els.btnPlayAgain.addEventListener('click', ()=> chooseMode(mode));
 els.btnChangeMode.addEventListener('click', ()=> { stopCamera(); showScreen('mode'); });
 
 /* ---------------- Camera + MediaPipe Hands ---------------- */
@@ -965,6 +1185,7 @@ async function beginSession(){
   els.btnStartSession.style.display = 'none';
   els.btnStopSession.style.display = '';
   els.btnReset.disabled = true;
+  els.gameHint.style.display = 'none';
 
   setOverlay(`<div class="countdown-sub" style="font-size:18px;">Get ready! Positioning check…</div>`, true);
   await wait(600);
@@ -972,6 +1193,8 @@ async function beginSession(){
 
   sessionActive = true;
   sessionEndAt = Date.now() + SESSION_MS;
+  sessionsLeft = Math.max(0, sessionsLeft - 1);
+  updateSessionsBadge();
   updateSessionTimerDisplay();
   sessionTimerInterval = setInterval(updateSessionTimerDisplay, 250);
 
@@ -1009,6 +1232,7 @@ async function playSingleRound(){
     computerChoice = CHOICES[Math.floor(Math.random()*3)];
     preview.classList.add('active');
     const svg = preview.querySelector('svg');
+    svg.innerHTML = AVATAR_SVG.robot;
     shuffleInterval = setInterval(()=>{
       svg.innerHTML = AVATAR_SVG[CHOICES[Math.floor(Math.random()*3)]];
     }, 110);
@@ -1069,7 +1293,7 @@ function resolveRound(gestures){
   // big battle icons
   els.battleRow.innerHTML = slots.map((s,i)=>{
     const g = gestures[s];
-    const icon = g ? AVATAR_SVG[g] : AVATAR_SVG.lassi;
+    const icon = g ? AVATAR_SVG[g] : (s==='Computer' ? AVATAR_SVG.robot : AVATAR_SVG.lassi);
     const name = s==='Computer' ? '🤖 Computer' : s;
     const html = `<div class="battle-icon-wrap" id="battle-${s}"><svg viewBox="0 0 100 100">${icon}</svg><div class="battle-name">${name}${g?` — ${LABELS[g]}`:' — no hand'}</div></div>`;
     return i===0 ? html : `<div class="battle-vs">VS</div>${html}`;
@@ -1078,7 +1302,7 @@ function resolveRound(gestures){
   slots.forEach(s=>{
     const card = document.getElementById('avatar-'+s);
     const g = gestures[s];
-    card.querySelector('svg').innerHTML = AVATAR_SVG[g || 'lassi'];
+    card.querySelector('svg').innerHTML = AVATAR_SVG[g || (s==='Computer' ? 'robot' : 'lassi')];
     card.querySelector('.avatar-gesture').textContent = g ? LABELS[g] : 'no hand seen';
   });
 
@@ -1122,6 +1346,11 @@ function endSession(){
   els.btnStartSession.style.display = '';
   els.btnStopSession.style.display = 'none';
   els.btnReset.disabled = false;
+  els.gameHint.style.display = '';
+
+  document.getElementById('summary-sessions-note').textContent = sessionsLeft > 0
+    ? `You have ${sessionsLeft} free session${sessionsLeft>1?'s':''} left on this payment — tap Play Again to jump right back in.`
+    : 'Free sessions used up — Play Again (or picking a mode) will ask for payment again.';
 
   const slots = playerSlots();
   const maxScore = Math.max(...slots.map(s=>scores[s]));

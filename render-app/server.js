@@ -135,13 +135,21 @@ app.post('/api/admin/upload-qr', requireAdmin, upload.single('qrImage'), (req, r
 });
 
 /* ---------------- Payment sessions ---------------- */
-const sessions = new Map(); // ref -> { status, createdAt }
+const sessions = new Map(); // ref -> { status, createdAt, name, normName }
+const usedTxIds = new Set(); // Tx ID replay protection
 
 function makeRefCode(){
   let ref;
   do { ref = String(Math.floor(1000 + Math.random() * 9000)); }
   while (sessions.has(ref));
   return ref;
+}
+function normalizeName(str){
+  return String(str || '')
+    .toUpperCase()
+    .replace(/[^A-Z\s]/g, '')   // strip punctuation/digits
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 function cleanupExpired(){
   const now = Date.now();
@@ -152,8 +160,13 @@ function cleanupExpired(){
 setInterval(cleanupExpired, 30 * 1000);
 
 app.post('/api/create-session', (req, res) => {
+  const rawName = (req.body && req.body.name || '').toString().slice(0, 60);
+  const normName = normalizeName(rawName);
+  if (normName.length < 2){
+    return res.status(400).json({ error: 'Please enter the name on your bank account.' });
+  }
   const ref = makeRefCode();
-  sessions.set(ref, { status: 'PENDING', createdAt: Date.now() });
+  sessions.set(ref, { status: 'PENDING', createdAt: Date.now(), name: rawName, normName });
   res.json({ ref, expiresInMs: SESSION_TTL_MS });
 });
 
@@ -179,17 +192,40 @@ app.post('/api/mcb-webhook', (req, res) => {
     return res.status(400).send('Notification did not match a 100 PKR credit');
   }
 
-  const refMatch = notificationText.match(/\b\d{4}\b/);
-  if (!refMatch) return res.status(400).send('No 4-digit ref code found in notification text');
+  // Replay protection: MCB Live notifications include a Tx ID unique to
+  // that transfer. If we've already processed this exact transaction
+  // (e.g. MacroDroid firing twice on the same SMS), don't double-credit.
+  const txMatch = notificationText.match(/Tx\s*ID[:\s]*([A-Za-z0-9]+)/i);
+  const txId = txMatch ? txMatch[1] : null;
+  if (txId && usedTxIds.has(txId)){
+    return res.status(409).send(`Tx ID ${txId} already processed`);
+  }
 
-  const ref = refMatch[0];
-  const session = sessions.get(ref);
-  if (!session) return res.status(404).send(`No pending session for ref ${ref}`);
-  if (session.status !== 'PENDING') return res.status(409).send(`Session ${ref} already ${session.status}`);
+  // Primary match: sender name. MCB Live's "received from <NAME> <BANK> ..."
+  // wording doesn't separate name from bank, so instead of trying to parse
+  // the name out precisely, pull the whole "received from ... in your"
+  // segment and check whether a pending session's name appears inside it.
+  const segMatch = notificationText.match(/received from\s+(.+?)\s+in your\b/i);
+  const searchText = normalizeName(segMatch ? segMatch[1] : notificationText);
 
-  session.status = 'PAID';
-  console.log(`[${new Date().toISOString()}] Session ${ref} marked PAID.`);
-  res.status(200).send(`Session ${ref} unlocked`);
+  let matchRef = null, matchSession = null;
+  for (const [ref, s] of sessions.entries()){
+    if (s.status !== 'PENDING') continue;
+    if (s.normName && searchText.includes(s.normName)){
+      if (!matchSession || s.createdAt < matchSession.createdAt){
+        matchRef = ref; matchSession = s;
+      }
+    }
+  }
+
+  if (!matchSession){
+    return res.status(404).send('No pending session matched the sender name in this credit');
+  }
+
+  matchSession.status = 'PAID';
+  if (txId) usedTxIds.add(txId);
+  console.log(`[${new Date().toISOString()}] Session ${matchRef} marked PAID (name match: "${matchSession.name}", Tx ID: ${txId || 'n/a'}).`);
+  res.status(200).send(`Session ${matchRef} unlocked (name match)`);
 });
 
 /* ---------------- Fallback to the game for any unmatched route ---------------- */
