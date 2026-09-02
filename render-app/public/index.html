@@ -229,6 +229,23 @@
   .computer-preview.active{ display:flex; }
   .computer-preview svg{ width:36px; height:36px; }
 
+  /* ---------- computer's "hand" column, shown in parallel with the live
+     player zone inside the stage, same as a real second player would be ---------- */
+  .computer-hand-zone{
+    display:none; position:absolute; top:0; right:0; width:50%; height:100%;
+    z-index:3; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    background:rgba(0,0,0,.28); pointer-events:none;
+  }
+  .computer-hand-icon{
+    width:96px; height:96px; filter:drop-shadow(0 6px 12px rgba(0,0,0,.5));
+    animation: dropIn .3s cubic-bezier(.34,1.56,.64,1);
+  }
+  .computer-hand-icon svg{ width:100%; height:100%; }
+  .computer-hand-label{
+    font-family:'Baloo 2'; font-size:13px; font-weight:700; color:var(--marigold);
+    background:rgba(0,0,0,.5); padding:4px 12px; border-radius:10px;
+  }
+
   .battle-icon-wrap{
     display:flex; flex-direction:column; align-items:center; gap:4px;
     animation: dropIn .45s cubic-bezier(.34,1.56,.64,1);
@@ -399,6 +416,10 @@
       <video id="video" playsinline autoplay muted></video>
       <canvas id="canvas"></canvas>
       <div class="zone-lines" id="zone-lines"></div>
+      <div class="computer-hand-zone" id="computer-hand-zone">
+        <div class="computer-hand-icon" id="computer-hand-icon"></div>
+        <div class="computer-hand-label">🤖 Computer</div>
+      </div>
       <div class="status-pill"><span class="dot" id="cam-dot"></span><span id="cam-status">connecting camera…</span></div>
       <div class="debug-pill" id="debug-pill">hands seen: 0</div>
       <div class="overlay-msg" id="overlay-msg"></div>
@@ -412,10 +433,6 @@
     </div>
 
     <div id="game-below-stage">
-      <div class="computer-preview" id="computer-preview">
-        <svg viewBox="0 0 100 100"></svg>
-        <span class="cp-label">🤖 Computer is shuffling its move…</span>
-      </div>
       <div class="battle-row" id="battle-row"></div>
       <div class="avatars-row" id="avatars-row"></div>
 
@@ -744,6 +761,19 @@ function playSessionEndJingle(){
   [783.99,659.25,523.25,392.0].forEach((f,i)=> setTimeout(()=>playBlip(f,0.22,'triangle',0.2), i*140));
 }
 
+// One little signature stinger per item, so the winning gesture is
+// audible, not just visible — plays every time that item wins a round,
+// regardless of which side (player or computer) threw it.
+const ITEM_WIN_JINGLES = {
+  paratha:  { notes:[392.00, 493.88, 587.33],          type:'triangle', dur:0.17, vol:0.22 }, // warm tawa-flip roll
+  shawarma: { notes:[466.16, 622.25, 783.99, 932.33],  type:'square',   dur:0.10, vol:0.18 }, // quick zippy wrap-roll
+  lassi:    { notes:[349.23, 440.00, 523.25, 659.25],  type:'sine',     dur:0.20, vol:0.22 }, // cool smooth slurp
+};
+function playItemWinJingle(item){
+  const j = ITEM_WIN_JINGLES[item] || ITEM_WIN_JINGLES.paratha;
+  j.notes.forEach((f,i)=> setTimeout(()=>playBlip(f, j.dur, j.type, j.vol), i*95));
+}
+
 /* ---------------- Payment gate config ---------------- */
 // Same-origin backend — the game and the API are served by the same
 // Render web service, so no separate host/port is needed. If you ever
@@ -956,22 +986,26 @@ function renderScoreboard(){
 }
 
 function renderZones(){
-  const zoneCount = mode==='solo' ? 1 : 2;
+  // Stage is always visually split into 2 parallel columns — in solo mode
+  // that's "You" on the left and the computer's own column on the right
+  // (with its dedicated hand panel), mirroring how 2 real players split it.
   els.zoneLines.innerHTML = '';
-  for(let i=0;i<zoneCount;i++){
+  for(let i=0;i<2;i++){
     const z = document.createElement('div');
     z.className='zone';
     els.zoneLines.appendChild(z);
   }
   document.querySelectorAll('.zone-label').forEach(l=>l.remove());
-  for(let i=0;i<zoneCount;i++){
+  const labelCount = mode==='solo' ? 1 : 2; // solo's right column is labeled by the computer panel itself
+  for(let i=0;i<labelCount;i++){
     const label = document.createElement('div');
     label.className='zone-label';
     label.textContent = mode==='solo' ? 'You' : 'P'+(i+1);
-    label.style.left = ((i+0.5)/zoneCount*100)+'%';
+    label.style.left = ((i+0.5)/2*100)+'%';
     label.style.transform = 'translateX(-50%)';
     els.stage.appendChild(label);
   }
+  document.getElementById('computer-hand-zone').style.display = mode==='solo' ? 'flex' : 'none';
 }
 
 function renderAvatarsIdle(){
@@ -985,6 +1019,9 @@ function renderAvatarsIdle(){
     </div>`;
   }).join('');
   els.battleRow.innerHTML = '';
+  if(mode==='solo'){
+    document.getElementById('computer-hand-icon').innerHTML = `<svg viewBox="0 0 100 100">${AVATAR_SVG.robot}</svg>`;
+  }
 }
 
 function formatTime(ms){
@@ -1223,18 +1260,16 @@ async function playSingleRound(){
 
   // The computer's move is locked in right now, before the countdown even
   // begins and before it has any way of seeing your gesture — this is the
-  // exact value used for scoring later. The flicker below is just a visible
+  // exact value used for scoring later. The flicker below (shown live in its
+  // own column, right alongside your tracked hand) is just a visible
   // "shuffling" animation so it's obvious nothing sneaky happens after you throw.
   let computerChoice = null;
   let shuffleInterval = null;
-  const preview = document.getElementById('computer-preview');
+  const handIconEl = document.getElementById('computer-hand-icon');
   if(mode==='solo'){
     computerChoice = CHOICES[Math.floor(Math.random()*3)];
-    preview.classList.add('active');
-    const svg = preview.querySelector('svg');
-    svg.innerHTML = AVATAR_SVG.robot;
     shuffleInterval = setInterval(()=>{
-      svg.innerHTML = AVATAR_SVG[CHOICES[Math.floor(Math.random()*3)]];
+      handIconEl.innerHTML = `<svg viewBox="0 0 100 100">${AVATAR_SVG[CHOICES[Math.floor(Math.random()*3)]]}</svg>`;
     }, 110);
   }
 
@@ -1248,7 +1283,12 @@ async function playSingleRound(){
   const frozen = classifyLiveHandsBySlot(computerChoice);
   capturing = false;
 
-  if(shuffleInterval){ clearInterval(shuffleInterval); preview.classList.remove('active'); }
+  if(shuffleInterval){
+    clearInterval(shuffleInterval);
+    // Freeze on the computer's actual locked move, right in its column,
+    // at the same moment your hand is being read.
+    handIconEl.innerHTML = `<svg viewBox="0 0 100 100">${AVATAR_SVG[computerChoice]}</svg>`;
+  }
 
   setOverlay('', false);
   resolveRound(frozen);
@@ -1324,6 +1364,7 @@ function resolveRound(gestures){
     winners.forEach(w=> scores[w] = (scores[w]||0)+1 );
     renderScoreboard();
     const isComputerWin = winners.length===1 && winners[0]==='Computer';
+    const winningItem = gestures[winners[0]];
     slots.forEach(s=>{
       const bw = document.getElementById('battle-'+s);
       if(!bw) return;
@@ -1331,9 +1372,10 @@ function resolveRound(gestures){
     });
     if(isComputerWin){
       playLoseThud();
+      setTimeout(()=> playItemWinJingle(winningItem), 200);
       setOverlay(`<div class="result-banner">🤖 Computer wins this round</div><div class="result-sub">${pick(LOSE_LINES)}</div>`, true);
     } else {
-      playWinFanfare();
+      playItemWinJingle(winningItem);
       setOverlay(`<div class="result-banner">${winners.join(' & ')} wins! 🎉</div><div class="result-sub">${pick(WIN_LINES)}</div>`, true);
     }
   }
