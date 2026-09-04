@@ -219,6 +219,36 @@
   .modal-error{ min-height:18px; color:var(--chili); font-size:13px; font-weight:600; margin-top:8px; }
   .modal-actions{ display:flex; gap:10px; justify-content:center; margin-top:14px; }
 
+  /* ---------- payment-verified celebration step ---------- */
+  .verified-badge{
+    font-size:54px; animation: dropIn .4s cubic-bezier(.34,1.56,.64,1), pulseGlow 1.1s ease-in-out infinite;
+  }
+  @keyframes pulseGlow{ 0%,100%{ filter:drop-shadow(0 0 0 rgba(63,163,77,0)); } 50%{ filter:drop-shadow(0 0 14px rgba(63,163,77,.65)); } }
+
+  /* ---------- staff-override reason picker ---------- */
+  .reason-options{ display:flex; flex-direction:column; gap:8px; margin:14px 0 4px; }
+  .reason-btn{
+    display:flex; align-items:center; gap:10px; text-align:left; width:100%;
+    font-family:'Fredoka'; font-size:14px; color:var(--cream); font-weight:600;
+    padding:10px 12px; border-radius:12px; border:2px solid #3c2716; background:#1c140f; cursor:pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .reason-btn:hover, .reason-btn.selected{ border-color:var(--marigold-deep); background:#2a1a0e; }
+  .reason-emoji{ font-size:18px; }
+  .promo-tag{ margin-left:auto; font-size:11px; color:#e8c99a; font-weight:700; }
+  .reason-subform{ text-align:left; margin-top:4px; }
+  .modal-field-label{ font-size:12px; color:#e8c99a; margin:10px 0 3px; display:block; }
+  .modal-text-input{
+    width:100%; box-sizing:border-box; font-family:'Fredoka'; font-size:14px;
+    padding:9px 10px; border-radius:10px; border:2px solid #3c2716; background:#1c140f;
+    color:var(--cream); outline:none; resize:vertical;
+  }
+  .modal-text-input:focus{ border-color:var(--marigold); }
+
+  /* ---------- nudge toward Staff Override once a session looks stuck ---------- */
+  .nudge-pulse{ animation: nudgePulse 1s ease-in-out infinite; }
+  @keyframes nudgePulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(245,180,11,.5); } 50%{ box-shadow:0 0 0 7px rgba(245,180,11,0); } }
+
   .battle-row{ display:flex; align-items:center; justify-content:center; gap:18px; }
 
   .computer-preview{
@@ -497,26 +527,83 @@
         </div>
         <p class="hint" style="margin-top:14px;">Automation not connected yet? Use Staff Override (PIN required) so the counter never gets stuck.</p>
       </div>
+
+      <!-- Step 3: playful "you're in!" confirmation, shown right before mode select -->
+      <div id="payment-verified-step" style="display:none;">
+        <div class="verified-badge">✅</div>
+        <h2 style="font-size:26px; margin:6px 0 4px;" id="verified-title">Payment Verified!</h2>
+        <p style="font-size:14px; color:#e8c99a; margin:0 0 4px;" id="verified-sub">Enjoy your session 🎉</p>
+      </div>
     </div>
   </section>
 
   <!-- ================= STAFF OVERRIDE MODAL ================= -->
   <div class="modal-backdrop" id="modal-staff-override">
-    <div class="modal-card">
-      <div class="modal-lock">🔒</div>
-      <h3>Staff Override</h3>
-      <p class="modal-sub">Enter the staff PIN to skip payment for this session.</p>
-      <input type="password" inputmode="numeric" autocomplete="off" id="staff-pin-input"
-             class="pin-input" maxlength="8" placeholder="••••" />
-      <div class="modal-error" id="staff-pin-error"></div>
-      <div class="modal-actions">
-        <button class="btn secondary small" id="btn-pin-cancel">Cancel</button>
-        <button class="btn small" id="btn-pin-submit">Unlock</button>
+    <div class="modal-card" id="modal-staff-card">
+
+      <!-- Step A: PIN -->
+      <div id="staff-step-pin">
+        <div class="modal-lock">🔒</div>
+        <h3>Staff Override</h3>
+        <p class="modal-sub">Enter the staff PIN to skip payment for this session.</p>
+        <input type="password" inputmode="numeric" autocomplete="off" id="staff-pin-input"
+               class="pin-input" maxlength="8" placeholder="••••" />
+        <div class="modal-error" id="staff-pin-error"></div>
+        <div class="modal-actions">
+          <button class="btn secondary small" id="btn-pin-cancel">Cancel</button>
+          <button class="btn small" id="btn-pin-submit">Unlock</button>
+        </div>
       </div>
+
+      <!-- Step B: why is staff overriding? every unlock must be logged with a reason -->
+      <div id="staff-step-reason" style="display:none;">
+        <h3 style="margin-bottom:2px;">Why are you unlocking this?</h3>
+        <p class="modal-sub">Every override is logged for admin to cross-check later.</p>
+
+        <div class="reason-options" id="reason-options">
+          <button class="reason-btn" data-reason="receipt">
+            <span class="reason-emoji">🧾</span> Manual Receipt Upload
+          </button>
+          <button class="reason-btn" data-reason="promo">
+            <span class="reason-emoji">🎁</span> Promotion Entry <span id="promo-remaining-tag" class="promo-tag"></span>
+          </button>
+          <button class="reason-btn" data-reason="other">
+            <span class="reason-emoji">✏️</span> Other
+          </button>
+        </div>
+
+        <!-- receipt sub-form -->
+        <div class="reason-subform" id="subform-receipt" style="display:none;">
+          <label class="modal-field-label">Customer name</label>
+          <input type="text" id="receipt-name" class="modal-text-input" placeholder="e.g. Areej Fatima" maxlength="80" />
+          <label class="modal-field-label">Reference / Tx ID</label>
+          <input type="text" id="receipt-ref" class="modal-text-input" placeholder="e.g. 106415059" maxlength="80" />
+          <label class="modal-field-label">Payment timestamp</label>
+          <input type="text" id="receipt-ts" class="modal-text-input" placeholder="e.g. 01-09-2026 21:06" maxlength="60" />
+        </div>
+
+        <!-- promo sub-form -->
+        <div class="reason-subform" id="subform-promo" style="display:none;">
+          <p class="modal-sub" id="promo-status-text">Checking today's promo slots…</p>
+        </div>
+
+        <!-- other sub-form -->
+        <div class="reason-subform" id="subform-other" style="display:none;">
+          <label class="modal-field-label">Reason</label>
+          <textarea id="other-note" class="modal-text-input" rows="3" maxlength="300" placeholder="Type the reason for this override…"></textarea>
+        </div>
+
+        <div class="modal-error" id="staff-reason-error"></div>
+        <div class="modal-actions">
+          <button class="btn secondary small" id="btn-reason-back">Back</button>
+          <button class="btn small" id="btn-reason-confirm" style="display:none;">Confirm & Unlock</button>
+        </div>
+      </div>
+
     </div>
   </div>
 
-  <footer class="tag">Har Paratha, Behtareen Swaad 🔥 · Al-Rizwan Paratha Experts · unofficial fan-made mini-game · <a href="/admin.html" style="color:#7a6248;">staff admin</a></footer>
+  <footer class="tag">Har Paratha, Behtareen Swaad 🔥 · Al-Rizwan Paratha Experts · Mini-game powered by Dark Matter by Seemab Mehmood · <a href="/admin.html" style="color:#7a6248;">staff admin</a></footer>
 </div>
 
 <!-- MediaPipe Hands — versions pinned deliberately, since mismatched
@@ -790,6 +877,7 @@ async function openPaymentGate(onConfirmed){
   showScreen('payment');
   document.getElementById('payment-name-step').style.display = '';
   document.getElementById('payment-qr-step').style.display = 'none';
+  document.getElementById('payment-verified-step').style.display = 'none';
   document.getElementById('payment-name-input').value = '';
   document.getElementById('payment-name-error').textContent = '';
   setTimeout(()=> document.getElementById('payment-name-input').focus(), 60);
@@ -866,12 +954,13 @@ function startPollingPayment(){
       if(data.status === 'PAID'){
         stopPollingPayment();
         document.getElementById('payment-status').textContent = '✅ Payment confirmed!';
-        playWinFanfare();
-        await wait(500);
-        closePaymentGateAndProceed();
+        showPaymentVerified('Payment Verified!', 'Enjoy your session 🎉');
       } else if(data.status === 'EXPIRED'){
         stopPollingPayment();
-        document.getElementById('payment-status').textContent = 'Ref code expired — cancel and try again.';
+        document.getElementById('payment-status').textContent =
+          "Ref code expired. Already paid but it's stuck? Use Staff Override below — don't pay twice.";
+        document.getElementById('btn-staff-override').classList.add('nudge-pulse');
+        document.getElementById('btn-staff-override-1').classList.add('nudge-pulse');
       }
     } catch(e){ /* silent — will retry on next tick */ }
   }, 1500);
@@ -880,10 +969,29 @@ function stopPollingPayment(){
   if(paymentPollInterval){ clearInterval(paymentPollInterval); paymentPollInterval = null; }
 }
 
+// Playful confirmation shown right before mode-select, for BOTH a real
+// automated payment match and a staff override — so the customer always
+// gets a clear "you're good to go" moment instead of the screen just
+// silently jumping to mode select.
+function showPaymentVerified(title, sub){
+  playWinFanfare();
+  document.getElementById('payment-name-step').style.display = 'none';
+  document.getElementById('payment-qr-step').style.display = 'none';
+  document.getElementById('verified-title').textContent = title;
+  document.getElementById('verified-sub').textContent = sub;
+  document.getElementById('payment-verified-step').style.display = '';
+  setTimeout(()=>{
+    document.getElementById('payment-verified-step').style.display = 'none';
+    closePaymentGateAndProceed();
+  }, 1700);
+}
+
 function closePaymentGateAndProceed(){
   const cb = onPaymentConfirmed;
   currentPaymentRef = null;
   onPaymentConfirmed = null;
+  document.getElementById('btn-staff-override').classList.remove('nudge-pulse');
+  document.getElementById('btn-staff-override-1').classList.remove('nudge-pulse');
   if(cb) cb();
 }
 
@@ -894,15 +1002,20 @@ document.getElementById('btn-cancel-payment').addEventListener('click', ()=>{
   showScreen('start');
 });
 
-/* ---------------- Staff override modal ---------------- */
+/* ---------------- Staff override modal (PIN, then reason, then unlock) ---------------- */
 const staffModal = document.getElementById('modal-staff-override');
 const staffPinInput = document.getElementById('staff-pin-input');
 const staffPinError = document.getElementById('staff-pin-error');
+const staffStepPin = document.getElementById('staff-step-pin');
+const staffStepReason = document.getElementById('staff-step-reason');
+let selectedReason = null;
 
 function openStaffOverrideModal(){
   staffPinInput.value = '';
   staffPinError.textContent = '';
   staffPinInput.classList.remove('shake');
+  staffStepPin.style.display = '';
+  staffStepReason.style.display = 'none';
   staffModal.classList.add('active');
   setTimeout(()=> staffPinInput.focus(), 60);
 }
@@ -910,14 +1023,26 @@ function closeStaffOverrideModal(){
   staffModal.classList.remove('active');
   staffPinInput.value = '';
   staffPinError.textContent = '';
+  resetReasonStep();
+}
+function resetReasonStep(){
+  selectedReason = null;
+  document.querySelectorAll('.reason-btn').forEach(b=> b.classList.remove('selected'));
+  document.querySelectorAll('.reason-subform').forEach(f=> f.style.display = 'none');
+  document.getElementById('staff-reason-error').textContent = '';
+  document.getElementById('btn-reason-confirm').style.display = 'none';
+  document.getElementById('receipt-name').value = '';
+  document.getElementById('receipt-ref').value = '';
+  document.getElementById('receipt-ts').value = '';
+  document.getElementById('other-note').value = '';
 }
 function submitStaffOverride(){
   const pin = staffPinInput.value;
   if(pin && pin === STAFF_OVERRIDE_PIN){
-    closeStaffOverrideModal();
-    stopPollingPayment();
-    document.getElementById('payment-status').textContent = '✅ Staff override applied.';
-    closePaymentGateAndProceed();
+    staffStepPin.style.display = 'none';
+    resetReasonStep();
+    staffStepReason.style.display = '';
+    refreshPromoStatus();
   } else {
     staffPinError.textContent = 'Incorrect PIN — try again.';
     staffPinInput.value = '';
@@ -928,9 +1053,97 @@ function submitStaffOverride(){
   }
 }
 
+async function refreshPromoStatus(){
+  const tag = document.getElementById('promo-remaining-tag');
+  const text = document.getElementById('promo-status-text');
+  const promoBtn = document.querySelector('.reason-btn[data-reason="promo"]');
+  try{
+    const res = await fetch(`${PAYMENT_BACKEND_URL}/api/promo-status`);
+    const data = await res.json();
+    tag.textContent = `${data.remaining}/${data.limit} left today`;
+    text.textContent = data.remaining > 0
+      ? `${data.remaining} of ${data.limit} free promo entries left today — this will use one.`
+      : `All ${data.limit} promo entries for today are already used.`;
+    promoBtn.disabled = data.remaining <= 0;
+    promoBtn.style.opacity = data.remaining <= 0 ? '0.5' : '1';
+  } catch(e){
+    tag.textContent = '';
+    text.textContent = "Couldn't check today's promo count — try Manual Receipt or Other instead.";
+  }
+}
+
+document.querySelectorAll('.reason-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    if(btn.disabled) return;
+    selectedReason = btn.dataset.reason;
+    document.querySelectorAll('.reason-btn').forEach(b=> b.classList.toggle('selected', b===btn));
+    document.querySelectorAll('.reason-subform').forEach(f=> f.style.display = 'none');
+    document.getElementById('subform-'+selectedReason).style.display = '';
+    document.getElementById('btn-reason-confirm').style.display = '';
+    document.getElementById('staff-reason-error').textContent = '';
+    if(selectedReason === 'receipt'){
+      const now = new Date();
+      document.getElementById('receipt-ts').value = now.toLocaleString();
+    }
+  });
+});
+
+async function confirmStaffOverride(){
+  const errEl = document.getElementById('staff-reason-error');
+  errEl.textContent = '';
+  if(!selectedReason){ errEl.textContent = 'Pick a reason first.'; return; }
+
+  const payload = { reason: selectedReason };
+  if(selectedReason === 'receipt'){
+    payload.name = document.getElementById('receipt-name').value.trim();
+    payload.refId = document.getElementById('receipt-ref').value.trim();
+    payload.ts = document.getElementById('receipt-ts').value.trim();
+    if(!payload.name || !payload.refId){
+      errEl.textContent = 'Name and reference ID are required.';
+      return;
+    }
+  } else if(selectedReason === 'other'){
+    payload.note = document.getElementById('other-note').value.trim();
+    if(!payload.note){
+      errEl.textContent = 'Type a short reason.';
+      return;
+    }
+  }
+
+  const confirmBtn = document.getElementById('btn-reason-confirm');
+  confirmBtn.disabled = true;
+  try{
+    const res = await fetch(`${PAYMENT_BACKEND_URL}/api/log-staff-override`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if(!res.ok){
+      errEl.textContent = data.error || 'Could not log this override — try again.';
+      confirmBtn.disabled = false;
+      return;
+    }
+    closeStaffOverrideModal();
+    stopPollingPayment();
+    const labels = { receipt: 'Receipt Verified', promo: '🎁 Promo Entry!', other: 'Access Granted' };
+    showPaymentVerified(labels[selectedReason] || 'Access Granted', 'Enjoy your session 🎉');
+  } catch(e){
+    errEl.textContent = "Couldn't reach the server — try again.";
+  }
+  confirmBtn.disabled = false;
+}
+
 document.getElementById('btn-staff-override').addEventListener('click', openStaffOverrideModal);
 document.getElementById('btn-pin-cancel').addEventListener('click', closeStaffOverrideModal);
 document.getElementById('btn-pin-submit').addEventListener('click', submitStaffOverride);
+document.getElementById('btn-reason-back').addEventListener('click', ()=>{
+  staffStepReason.style.display = 'none';
+  staffStepPin.style.display = '';
+  staffPinInput.value = '';
+  setTimeout(()=> staffPinInput.focus(), 60);
+});
+document.getElementById('btn-reason-confirm').addEventListener('click', confirmStaffOverride);
 staffPinInput.addEventListener('keydown', (e)=>{
   if(e.key === 'Enter'){ e.preventDefault(); submitStaffOverride(); }
   if(e.key === 'Escape'){ e.preventDefault(); closeStaffOverrideModal(); }
@@ -1234,6 +1447,7 @@ async function beginSession(){
   updateSessionsBadge();
   updateSessionTimerDisplay();
   sessionTimerInterval = setInterval(updateSessionTimerDisplay, 250);
+  fetch(`${PAYMENT_BACKEND_URL}/api/log-session`, { method: 'POST' }).catch(()=>{});
 
   while(sessionActive && Date.now() < sessionEndAt){
     await playSingleRound();

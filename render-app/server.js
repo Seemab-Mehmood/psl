@@ -41,6 +41,8 @@ const EXPECTED_AMOUNT_STRINGS = ['100.00', '100', 'PKR 100', 'Rs. 100', 'Rs 100'
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = path.join(__dirname, 'data');
 const META_PATH = path.join(DATA_DIR, 'qr-meta.json');
+const ANALYTICS_PATH = path.join(DATA_DIR, 'analytics.json');
+const PROMO_DAILY_LIMIT = 10;
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(META_PATH)) {
@@ -50,6 +52,13 @@ if (!fs.existsSync(META_PATH)) {
     updatedAt: new Date().toISOString(),
   }, null, 2));
 }
+if (!fs.existsSync(ANALYTICS_PATH)) {
+  fs.writeFileSync(ANALYTICS_PATH, JSON.stringify({
+    sessionsByDate: {},   // "YYYY-MM-DD" -> count of 2-min sessions played that day
+    staffOverrides: [],   // [{ id, timestamp, reason, name?, refId?, receiptTimestamp?, note? }]
+    promoByDate: {},      // "YYYY-MM-DD" -> number of free promo entries already handed out
+  }, null, 2));
+}
 
 function readMeta(){
   try { return JSON.parse(fs.readFileSync(META_PATH, 'utf8')); }
@@ -57,6 +66,16 @@ function readMeta(){
 }
 function writeMeta(meta){
   fs.writeFileSync(META_PATH, JSON.stringify(meta, null, 2));
+}
+function readAnalytics(){
+  try { return JSON.parse(fs.readFileSync(ANALYTICS_PATH, 'utf8')); }
+  catch(e){ return { sessionsByDate: {}, staffOverrides: [], promoByDate: {} }; }
+}
+function writeAnalytics(a){
+  fs.writeFileSync(ANALYTICS_PATH, JSON.stringify(a, null, 2));
+}
+function todayKey(){
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, server clock
 }
 
 app.use(express.static(PUBLIC_DIR));
@@ -226,6 +245,82 @@ app.post('/api/mcb-webhook', (req, res) => {
   if (txId) usedTxIds.add(txId);
   console.log(`[${new Date().toISOString()}] Session ${matchRef} marked PAID (name match: "${matchSession.name}", Tx ID: ${txId || 'n/a'}).`);
   res.status(200).send(`Session ${matchRef} unlocked (name match)`);
+});
+
+/* ---------------- Session + staff-override analytics ---------------- */
+
+// Called by the game client the moment a 2-min session actually starts,
+// so admin can see how many sessions ran each day.
+app.post('/api/log-session', (req, res) => {
+  const a = readAnalytics();
+  const day = todayKey();
+  a.sessionsByDate[day] = (a.sessionsByDate[day] || 0) + 1;
+  writeAnalytics(a);
+  res.json({ ok: true, today: a.sessionsByDate[day] });
+});
+
+// Public so the staff-override screen can show "X of 10 promo entries left
+// today" live, before staff commits to that reason.
+app.get('/api/promo-status', (req, res) => {
+  const a = readAnalytics();
+  const day = todayKey();
+  const used = a.promoByDate[day] || 0;
+  res.json({ date: day, used, limit: PROMO_DAILY_LIMIT, remaining: Math.max(0, PROMO_DAILY_LIMIT - used) });
+});
+
+// Every successful staff override must record WHY, so admin can cross-check
+// later. Three reasons: a manually-verified receipt (name/ref/timestamp),
+// a free promo entry (capped per day), or a free-text "other".
+app.post('/api/log-staff-override', (req, res) => {
+  const { reason, name, refId, ts, note } = req.body || {};
+  const validReasons = ['receipt', 'promo', 'other'];
+  if (!validReasons.includes(reason)) return res.status(400).json({ error: 'Invalid reason.' });
+
+  const a = readAnalytics();
+  const day = todayKey();
+
+  if (reason === 'promo'){
+    const used = a.promoByDate[day] || 0;
+    if (used >= PROMO_DAILY_LIMIT){
+      return res.status(409).json({ error: `All ${PROMO_DAILY_LIMIT} promo entries for today are already used.` });
+    }
+    a.promoByDate[day] = used + 1;
+  }
+
+  if (reason === 'receipt' && (!name || !refId)){
+    return res.status(400).json({ error: 'Name and reference ID are required for a manual receipt.' });
+  }
+
+  const entry = {
+    id: crypto.randomBytes(6).toString('hex'),
+    timestamp: new Date().toISOString(),
+    reason,
+    name: reason === 'receipt' ? String(name || '').slice(0, 80) : undefined,
+    refId: reason === 'receipt' ? String(refId || '').slice(0, 80) : undefined,
+    receiptTimestamp: reason === 'receipt' ? String(ts || '').slice(0, 60) : undefined,
+    note: reason === 'other' ? String(note || '').slice(0, 300) : undefined,
+  };
+  a.staffOverrides.unshift(entry);
+  a.staffOverrides = a.staffOverrides.slice(0, 500); // cap history so the file doesn't grow forever
+  writeAnalytics(a);
+  res.json({ ok: true, entry, promoRemaining: reason === 'promo' ? (PROMO_DAILY_LIMIT - a.promoByDate[day]) : undefined });
+});
+
+/* ---------------- Admin: stats + full staff-override log ---------------- */
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
+  const a = readAnalytics();
+  const day = todayKey();
+  res.json({
+    sessionsByDate: a.sessionsByDate,
+    todaySessions: a.sessionsByDate[day] || 0,
+    promo: { date: day, used: a.promoByDate[day] || 0, limit: PROMO_DAILY_LIMIT },
+    overridesToday: a.staffOverrides.filter(o => o.timestamp.slice(0, 10) === day).length,
+    overridesTotal: a.staffOverrides.length,
+  });
+});
+app.get('/api/admin/staff-overrides', requireAdmin, (req, res) => {
+  const a = readAnalytics();
+  res.json({ overrides: a.staffOverrides });
 });
 
 /* ---------------- Fallback to the game for any unmatched route ---------------- */

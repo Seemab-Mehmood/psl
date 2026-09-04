@@ -21,7 +21,7 @@
   .card{
     background:linear-gradient(160deg, var(--chai) 0%, #2a1a0e 100%);
     border:3px solid var(--marigold-deep); border-radius:22px; padding:26px;
-    max-width:420px; width:100%; box-shadow:0 12px 30px rgba(0,0,0,.5);
+    max-width:460px; width:100%; box-shadow:0 12px 30px rgba(0,0,0,.5);
   }
   h1{ font-size:22px; color:var(--marigold); margin-top:0; text-align:center;}
   label{ font-size:13px; color:#e8c99a; display:block; margin:14px 0 4px;}
@@ -43,6 +43,25 @@
   .current-qr .exp{ font-size:12.5px; color:#e8c99a; margin-top:6px; }
   #logout-link{ display:block; text-align:center; margin-top:14px; color:#c8a878; font-size:12.5px; cursor:pointer; }
   #logout-link:hover{ color:var(--marigold); }
+  .tabs{ display:flex; gap:6px; margin-bottom:16px; }
+  .tab-btn{
+    flex:1; font-family:'Baloo 2'; font-weight:700; font-size:13px; padding:9px 6px; border-radius:10px;
+    border:2px solid #3c2716; background:#1c140f; color:#e8c99a; cursor:pointer;
+  }
+  .tab-btn.active{ border-color:var(--marigold-deep); background:linear-gradient(180deg, var(--marigold), var(--marigold-deep)); color:#2b1a06; }
+  .tab-panel{ display:none; }
+  .tab-panel.active{ display:block; }
+  .stat-row{ display:flex; justify-content:space-between; align-items:baseline; padding:8px 0; border-bottom:1px solid #3c2716; font-size:14px; }
+  .stat-row b{ color:var(--marigold); font-size:20px; font-family:'Baloo 2'; }
+  .day-row{ display:flex; justify-content:space-between; font-size:13px; padding:5px 0; color:#e8c99a; }
+  .day-row b{ color:var(--cream); }
+  .override-item{
+    border:2px solid #3c2716; border-radius:12px; padding:10px 12px; margin-bottom:8px; font-size:12.5px; text-align:left;
+  }
+  .override-item .ov-top{ display:flex; justify-content:space-between; font-family:'Baloo 2'; font-weight:700; color:var(--marigold); font-size:13px; margin-bottom:4px; }
+  .override-item .ov-detail{ color:#e8c99a; line-height:1.5; }
+  .refresh-link{ display:block; text-align:center; margin-top:10px; color:#c8a878; font-size:12.5px; cursor:pointer; }
+  .refresh-link:hover{ color:var(--marigold); }
 </style>
 </head>
 <body>
@@ -56,21 +75,48 @@
 </div>
 
 <div class="card" id="upload-card" style="display:none;">
-  <h1>🫓 Update Payment QR</h1>
+  <h1>🫓 Admin Dashboard</h1>
 
-  <div class="current-qr" id="current-qr-block">
-    <img id="current-qr-img" src="" alt="current QR" />
-    <div class="exp" id="current-qr-expiry"></div>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="qr">QR Code</button>
+    <button class="tab-btn" data-tab="stats">📊 Stats</button>
+    <button class="tab-btn" data-tab="overrides">🛡️ Overrides</button>
   </div>
 
-  <label for="qr-file">New QR image (PNG/JPG/WEBP)</label>
-  <input type="file" id="qr-file" accept="image/png,image/jpeg,image/webp" />
+  <!-- ---- QR tab ---- -->
+  <div class="tab-panel active" id="tab-qr">
+    <div class="current-qr" id="current-qr-block">
+      <img id="current-qr-img" src="" alt="current QR" />
+      <div class="exp" id="current-qr-expiry"></div>
+    </div>
 
-  <label for="qr-expiry">Valid until (optional but recommended)</label>
-  <input type="date" id="qr-expiry" />
+    <label for="qr-file">New QR image (PNG/JPG/WEBP)</label>
+    <input type="file" id="qr-file" accept="image/png,image/jpeg,image/webp" />
 
-  <button id="btn-upload">Upload & Replace QR</button>
-  <div class="msg" id="upload-msg"></div>
+    <label for="qr-expiry">Valid until (optional but recommended)</label>
+    <input type="date" id="qr-expiry" />
+
+    <button id="btn-upload">Upload & Replace QR</button>
+    <div class="msg" id="upload-msg"></div>
+  </div>
+
+  <!-- ---- Stats tab ---- -->
+  <div class="tab-panel" id="tab-stats">
+    <div class="stat-row"><span>Sessions played today</span><b id="stat-today">–</b></div>
+    <div class="stat-row"><span>Promo entries used today</span><b id="stat-promo">–</b></div>
+    <div class="stat-row"><span>Staff overrides today</span><b id="stat-overrides-today">–</b></div>
+    <div class="stat-row"><span>Staff overrides — all time</span><b id="stat-overrides-total">–</b></div>
+    <h2 style="font-size:15px; margin:18px 0 4px;">Sessions by day</h2>
+    <div id="stat-days"></div>
+    <div class="refresh-link" id="refresh-stats">↻ Refresh</div>
+  </div>
+
+  <!-- ---- Overrides tab ---- -->
+  <div class="tab-panel" id="tab-overrides">
+    <p style="font-size:12.5px; color:#e8c99a; margin-top:0;">Every staff-override unlock, most recent first — cross-check against receipts as needed.</p>
+    <div id="overrides-list"></div>
+    <div class="refresh-link" id="refresh-overrides">↻ Refresh</div>
+  </div>
 
   <div id="logout-link">Log out</div>
 </div>
@@ -99,11 +145,70 @@ function showLoggedIn(){
   document.getElementById('login-card').style.display = 'none';
   document.getElementById('upload-card').style.display = '';
   refreshCurrentQr();
+  refreshStats();
 }
 function showLoggedOut(){
   document.getElementById('login-card').style.display = '';
   document.getElementById('upload-card').style.display = 'none';
 }
+
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=> b.classList.toggle('active', b===btn));
+    document.querySelectorAll('.tab-panel').forEach(p=> p.classList.remove('active'));
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab === 'stats') refreshStats();
+    if(btn.dataset.tab === 'overrides') refreshOverrides();
+  });
+});
+
+async function authedGet(url){
+  const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + getToken() } });
+  if(res.status === 401){ clearToken(); showLoggedOut(); throw new Error('Session expired'); }
+  return res.json();
+}
+
+async function refreshStats(){
+  try{
+    const data = await authedGet('/api/admin/stats');
+    document.getElementById('stat-today').textContent = data.todaySessions;
+    document.getElementById('stat-promo').textContent = `${data.promo.used}/${data.promo.limit}`;
+    document.getElementById('stat-overrides-today').textContent = data.overridesToday;
+    document.getElementById('stat-overrides-total').textContent = data.overridesTotal;
+
+    const days = Object.entries(data.sessionsByDate).sort((a,b)=> b[0].localeCompare(a[0])).slice(0, 14);
+    const daysEl = document.getElementById('stat-days');
+    daysEl.innerHTML = days.length
+      ? days.map(([d,c])=> `<div class="day-row"><span>${d}</span><b>${c}</b></div>`).join('')
+      : '<div class="day-row"><span>No sessions logged yet.</span></div>';
+  } catch(e){ /* handled by authedGet */ }
+}
+
+async function refreshOverrides(){
+  try{
+    const data = await authedGet('/api/admin/staff-overrides');
+    const listEl = document.getElementById('overrides-list');
+    if(!data.overrides.length){
+      listEl.innerHTML = '<p style="font-size:13px; color:#e8c99a;">No staff overrides logged yet.</p>';
+      return;
+    }
+    const reasonLabel = { receipt: '🧾 Manual Receipt', promo: '🎁 Promo Entry', other: '✏️ Other' };
+    listEl.innerHTML = data.overrides.map(o=>{
+      const when = new Date(o.timestamp).toLocaleString();
+      let detail = '';
+      if(o.reason === 'receipt') detail = `Name: ${o.name || '—'}<br>Ref: ${o.refId || '—'}<br>Paid at: ${o.receiptTimestamp || '—'}`;
+      else if(o.reason === 'other') detail = o.note || '—';
+      else detail = 'Free promotional entry';
+      return `<div class="override-item">
+        <div class="ov-top"><span>${reasonLabel[o.reason] || o.reason}</span><span>${when}</span></div>
+        <div class="ov-detail">${detail}</div>
+      </div>`;
+    }).join('');
+  } catch(e){ /* handled by authedGet */ }
+}
+
+document.getElementById('refresh-stats').addEventListener('click', refreshStats);
+document.getElementById('refresh-overrides').addEventListener('click', refreshOverrides);
 
 if(getToken()) showLoggedIn(); else showLoggedOut();
 
